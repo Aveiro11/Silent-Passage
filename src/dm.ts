@@ -103,12 +103,14 @@ const gameMachine = setup({
         return;
       }
 
+      const allowedIntents = room?.id === "guard_grumpy"
+        ? ["GameGreeting"]
+        : ["GamePolite", "GameCommand", "GameGreeting"];
+
       detectIntent(text)
         .then((intent) => {
           const volume = getVolumeLevel();
-          const pass =
-            ["GamePolite", "GameCommand", "GameGreeting"].includes(intent ?? "") &&
-            volume <= maxVol;
+          const pass = allowedIntents.includes(intent ?? "") && volume <= maxVol;
           service.send({ type: "GUARD_RESULT", pass });
         })
         .catch(() => service.send({ type: "GUARD_RESULT", pass: false }));
@@ -118,40 +120,34 @@ const gameMachine = setup({
   guards: {
     isDragonAndLoud: ({ context }) => {
       const room = context.rooms[context.currentRoom];
-      return room?.id === "dragon" && getVolumeLevel() > (room.maxVolume ?? 30);
+      return room?.type === "dragon" && getVolumeLevel() > (room.maxVolume ?? 30);
     },
 
     isDragonAndQuiet: ({ context }) => {
       const room = context.rooms[context.currentRoom];
-      return room?.id === "dragon" && getVolumeLevel() <= (room.maxVolume ?? 30);
+      return room?.type === "dragon" && getVolumeLevel() <= (room.maxVolume ?? 30);
     },
 
     isGuardRoom: ({ context, event }) =>
-      context.rooms[context.currentRoom]?.id === "guard" &&
+      context.rooms[context.currentRoom]?.type === "guard" &&
       event.type === "SPEECH_RESULT" &&
       event.text.trim().length > 0,
 
     isTempleSuccess: ({ context, event }) => {
       const room = context.rooms[context.currentRoom];
-      if (room?.id !== "temple") return false;
-      const text = (event.type === "SPEECH_RESULT" ? event.text : "")
-        .toLowerCase()
-        .replace(/[^\w\s]/g, "")
-        .replace(/\s+/g, "");
-      return (
-        ["adib", "adip", "adeep", "aadeeb"].some((p) => text.includes(p)) &&
-        getVolumeLevel() <= (room.maxVolume ?? 30)
-      );
+      if (room?.type !== "temple") return false;
+      if (event.type !== "SPEECH_RESULT") return false;
+      return event.confidence >= 0.6 && getVolumeLevel() <= (room.maxVolume ?? 30);
     },
 
     isTempleFail: ({ context }) => {
       const room = context.rooms[context.currentRoom];
-      return room?.id === "temple" && getVolumeLevel() > (room.maxVolume ?? 30);
+      return room?.type === "temple" && getVolumeLevel() > (room.maxVolume ?? 30);
     },
 
     isDefaultPass: ({ context }) => {
       const room = context.rooms[context.currentRoom];
-      if (["dragon", "guard", "temple"].includes(room?.id ?? "")) return false;
+      if (["dragon", "guard", "temple"].includes(room?.type ?? "")) return false;
       const vol = getVolumeLevel();
       return vol >= (room?.minVolume ?? 0) && vol <= (room?.maxVolume ?? 255);
     },
@@ -245,9 +241,13 @@ const gameMachine = setup({
     dragonPass: {
       entry: [
         assign({ currentRoom: ({ context }) => context.currentRoom + 1 }),
-        () => speak("You sneak past the dragon quietly.", () => {
-          service.send({ type: "FEEDBACK_DONE" });
-        }),
+        ({ context }) => {
+          const room = context.rooms[context.currentRoom - 1];
+          const msg = room?.id === "dragon_halfawake"
+            ? "You hold your breath and tiptoe past the restless dragon."
+            : "You sneak past the dragon quietly.";
+          speak(msg, () => service.send({ type: "FEEDBACK_DONE" }));
+        },
       ],
       on: {
         FEEDBACK_DONE: [
@@ -280,18 +280,22 @@ const gameMachine = setup({
 
 let service = createActor(gameMachine);
 
+function pickRooms(allRooms: Room[]): Room[] {
+  const dragonOptions = allRooms.filter(r => r.type === "dragon");
+  const guardOptions = allRooms.filter(r => r.type === "guard");
+  const templeOptions = allRooms.filter(r => r.type === "temple");
+  const pick = (arr: Room[]) => arr[Math.floor(Math.random() * arr.length)];
+  return [pick(dragonOptions), pick(guardOptions), pick(templeOptions)];
+}
 
 export async function startGame(onEnd?: () => void) {
-  const rooms: Room[] = await loadRooms(xmlText);
+  const allRooms: Room[] = await loadRooms(xmlText);
   onGameEnd = onEnd ?? null;
 
-  // Stop any previous actor (in case the user restarts mid-game)
-  try { service.stop(); } catch { /* already stopped */ }
-
-  // Create a brand-new actor — a stopped/final actor cannot be restarted
+  try { service.stop(); } catch { }
   service = createActor(gameMachine);
   service.start();
-  service.send({ type: "INIT", rooms });
+  service.send({ type: "INIT", rooms: pickRooms(allRooms) });
 }
 
 export { startGame as startGameXState };

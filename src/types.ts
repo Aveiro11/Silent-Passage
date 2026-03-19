@@ -1,9 +1,10 @@
 export interface Room {
   id: string;
-  type: "quiet" | "loud";
+  type: "quiet" | "loud" | "dragon" | "guard" | "temple";
   minVolume: number;
   maxVolume: number;
   text: string;
+  variant?: "normal" | "halfawake" | "grumpy" | "strict";
 }
 
 export interface NLUResult {
