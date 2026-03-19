@@ -61,13 +61,13 @@ Any other intent (including threats) sends you back to room 1.
 
 | Layer | Technology |
 |-------|------------|
-| Language | TypeScript (strict) |
-| Bundler | Vite |
-| State Machine | XState v5 |
-| Speech Synthesis | Azure Cognitive Services — `en-US-DavisNeural` |
-| Speech Recognition | Azure Cognitive Services + Custom Speech Model |
-| Intent Detection | Azure CLU (Conversational Language Understanding) |
-| Volume Detection | Web Audio API (`AnalyserNode`) |
+| Language | ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white) |
+| Bundler | ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat&logo=vite&logoColor=white) |
+| State Machine | ![XState](https://img.shields.io/badge/XState_v5-121212?style=flat&logo=xstate&logoColor=white) |
+| Speech Synthesis | ![Azure](https://img.shields.io/badge/Azure_TTS-0078D4?style=flat&logo=microsoftazure&logoColor=white) |
+| Speech Recognition | ![Azure](https://img.shields.io/badge/Azure_Custom_Speech-0078D4?style=flat&logo=microsoftazure&logoColor=white) |
+| Intent Detection | ![Azure](https://img.shields.io/badge/Azure_CLU-0078D4?style=flat&logo=microsoftazure&logoColor=white) |
+| Volume Detection | ![WebAudio](https://img.shields.io/badge/Web_Audio_API-FF6B35?style=flat&logo=webaudio&logoColor=white) |
 
 ---
 
