@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<game>
+  <room id="dragon" type="dragon" minVolume="1" maxVolume="30">
+    A dragon sleeps in the corridor. Move quietly or he will wake.
+  </room>
+
+  <room id="guard" type="guard" minVolume="20" maxVolume="30">
+    A guard blocks the gate. Politely ask him to move or greet him quietly to pass.
+  </room>
+
+  <room id="temple" type="temple" minVolume="1" maxVolume="30">
+    A sacred temple door demands a whisper of the password.
+  </room>
+</game>

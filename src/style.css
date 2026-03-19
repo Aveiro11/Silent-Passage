@@ -1,0 +1,17 @@
+body {
+  font-family: Arial;
+  background: #111;
+  color: white;
+  text-align: center;
+  padding-top: 50px;
+}
+
+button {
+  font-size: 20px;
+  padding: 10px 20px;
+}
+
+progress {
+  width: 300px;
+  margin-top: 20px;
+}

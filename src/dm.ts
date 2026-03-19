@@ -1,0 +1,297 @@
+import { setup, assign, createActor } from "xstate";
+import { getVolumeLevel } from "./audio";
+import { speak, listen } from "./spst-wrapper";
+import { detectIntent } from "./nlu";
+import { loadRooms } from "./xml-parser";
+import xmlText from "./game.xml?raw";
+
+
+interface Room {
+  id: string;
+  type: string;
+  text: string;
+  minVolume?: number;
+  maxVolume?: number;
+}
+
+interface GameContext {
+  rooms: Room[];
+  currentRoom: number;
+  lastText: string;
+  volume: number;
+}
+
+type GameEvent =
+  | { type: "INIT"; rooms: Room[] }
+  | { type: "SPEECH_RESULT"; text: string; confidence: number }
+  | { type: "NO_INPUT" }
+  | { type: "GUARD_RESULT"; pass: boolean }
+  | { type: "FEEDBACK_DONE" };
+
+
+
+let onGameEnd: (() => void) | null = null;
+
+function startListening(delayMs = 2500) {
+  setTimeout(() => {
+    listen(
+      (result, confidence) => service.send({ type: "SPEECH_RESULT", text: result, confidence }),
+      () => service.send({ type: "NO_INPUT" }),
+      10_000
+    );
+  }, delayMs);
+}
+
+
+const gameMachine = setup({
+  types: {
+    context: {} as GameContext,
+    events: {} as GameEvent,
+  },
+
+  actions: {
+    // Speak the current room prompt, THEN open the mic once TTS is done.
+    speakRoom: ({ context }) => {
+      const room = context.rooms[context.currentRoom];
+      if (!room) return;
+      speak(room.text.trim(), () => {
+        // Adaptive delay: estimate TTS duration from text length + 1500ms buffer
+        // Prevents mic from opening while speaker output is still decaying
+        const wordCount = room.text.trim().split(/\s+/).length;
+        const estimatedMs = Math.ceil((wordCount / 150) * 60_000) + 1500;
+        startListening(Math.max(2500, estimatedMs));
+      });
+    },
+
+    // Speak retry message, THEN open the mic again.
+    speakRetry: () => {
+      speak("I didn't hear you. Please speak.", () => startListening(2000));
+    },
+
+    speakGuardRejected: () => {
+      speak("The guard is offended and pushes you back to the dragon.", () => {
+        service.send({ type: "FEEDBACK_DONE" });
+      });
+    },
+
+    speakTempleFail: () => {
+      speak("You are too loud. The temple resets and sends you back to the dragon.", () => {
+        service.send({ type: "FEEDBACK_DONE" });
+      });
+    },
+
+    speakDeath: () => {
+      speak("The dragon wakes up and kills you. Game over.", () => {
+        onGameEnd?.();
+      });
+    },
+
+    speakVictory: () => {
+      speak("You have completed the trial. Victory!", () => {
+        onGameEnd?.();
+      });
+    },
+
+    // Fire NLU; result comes back as GUARD_RESULT event.
+    checkGuardIntent: ({ context, event }) => {
+      const room = context.rooms[context.currentRoom];
+      const text = event.type === "SPEECH_RESULT" ? event.text.trim() : "";
+      const maxVol = room?.maxVolume ?? 30;
+
+      if (!text) {
+        service.send({ type: "GUARD_RESULT", pass: false });
+        return;
+      }
+
+      detectIntent(text)
+        .then((intent) => {
+          const volume = getVolumeLevel();
+          const pass =
+            ["GamePolite", "GameCommand", "GameGreeting"].includes(intent ?? "") &&
+            volume <= maxVol;
+          service.send({ type: "GUARD_RESULT", pass });
+        })
+        .catch(() => service.send({ type: "GUARD_RESULT", pass: false }));
+    },
+  },
+
+  guards: {
+    isDragonAndLoud: ({ context }) => {
+      const room = context.rooms[context.currentRoom];
+      return room?.id === "dragon" && getVolumeLevel() > (room.maxVolume ?? 30);
+    },
+
+    isDragonAndQuiet: ({ context }) => {
+      const room = context.rooms[context.currentRoom];
+      return room?.id === "dragon" && getVolumeLevel() <= (room.maxVolume ?? 30);
+    },
+
+    isGuardRoom: ({ context, event }) =>
+      context.rooms[context.currentRoom]?.id === "guard" &&
+      event.type === "SPEECH_RESULT" &&
+      event.text.trim().length > 0,
+
+    isTempleSuccess: ({ context, event }) => {
+      const room = context.rooms[context.currentRoom];
+      if (room?.id !== "temple") return false;
+      const text = (event.type === "SPEECH_RESULT" ? event.text : "")
+        .toLowerCase()
+        .replace(/[^\w\s]/g, "")
+        .replace(/\s+/g, "");
+      return (
+        ["adib", "adip", "adeep", "aadeeb"].some((p) => text.includes(p)) &&
+        getVolumeLevel() <= (room.maxVolume ?? 30)
+      );
+    },
+
+    isTempleFail: ({ context }) => {
+      const room = context.rooms[context.currentRoom];
+      return room?.id === "temple" && getVolumeLevel() > (room.maxVolume ?? 30);
+    },
+
+    isDefaultPass: ({ context }) => {
+      const room = context.rooms[context.currentRoom];
+      if (["dragon", "guard", "temple"].includes(room?.id ?? "")) return false;
+      const vol = getVolumeLevel();
+      return vol >= (room?.minVolume ?? 0) && vol <= (room?.maxVolume ?? 255);
+    },
+
+    isRoomsExhausted: ({ context }) =>
+      context.currentRoom >= context.rooms.length,
+
+    guardPassed: ({ event }) => event.type === "GUARD_RESULT" && event.pass,
+    guardFailed: ({ event }) => event.type === "GUARD_RESULT" && !event.pass,
+  },
+
+}).createMachine({
+  id: "game",
+  initial: "loading",
+  context: {
+    rooms: [],
+    currentRoom: 0,
+    lastText: "",
+    volume: 0,
+  },
+
+  states: {
+    loading: {
+      on: {
+        INIT: {
+          target: "room",
+          actions: assign({ rooms: ({ event }) => event.rooms }),
+        },
+      },
+    },
+
+    room: {
+      entry: { type: "speakRoom" },
+      on: {
+        NO_INPUT: { target: "retrying" },
+        SPEECH_RESULT: [
+          { guard: "isDragonAndLoud", target: "death" },
+          { guard: "isDragonAndQuiet", target: "dragonPass" },
+          { guard: "isGuardRoom", target: "awaitGuardIntent" },
+          { guard: "isTempleSuccess", target: "victory" },
+          { guard: "isTempleFail", target: "templeFailed" },
+          { guard: "isDefaultPass", target: "nextRoom" },
+          { target: "retrying" },
+        ],
+      },
+    },
+
+
+    retrying: {
+      entry: { type: "speakRetry" },
+
+      on: {
+        NO_INPUT: { target: "retrying" },
+        SPEECH_RESULT: [
+          { guard: "isDragonAndLoud", target: "death" },
+          { guard: "isDragonAndQuiet", target: "dragonPass" },
+          { guard: "isGuardRoom", target: "awaitGuardIntent" },
+          { guard: "isTempleSuccess", target: "victory" },
+          { guard: "isTempleFail", target: "templeFailed" },
+          { guard: "isDefaultPass", target: "nextRoom" },
+          { target: "retrying" },
+        ],
+      },
+    },
+
+    nextRoom: {
+      entry: assign({ currentRoom: ({ context }) => context.currentRoom + 1 }),
+      always: [
+        { guard: "isRoomsExhausted", target: "victory" },
+        { target: "room" },
+      ],
+    },
+
+    templeFailed: {
+      entry: [
+        assign({ currentRoom: () => 0 }),
+        { type: "speakTempleFail" },
+      ],
+      on: { FEEDBACK_DONE: "room" },
+    },
+
+
+    guardRejected: {
+      entry: [
+        assign({ currentRoom: () => 0 }),
+        { type: "speakGuardRejected" },
+      ],
+      on: { FEEDBACK_DONE: "room" },
+    },
+
+    dragonPass: {
+      entry: [
+        assign({ currentRoom: ({ context }) => context.currentRoom + 1 }),
+        () => speak("You sneak past the dragon quietly.", () => {
+          service.send({ type: "FEEDBACK_DONE" });
+        }),
+      ],
+      on: {
+        FEEDBACK_DONE: [
+          { guard: "isRoomsExhausted", target: "victory" },
+          { target: "room" },
+        ],
+      },
+    },
+    awaitGuardIntent: {
+      entry: { type: "checkGuardIntent" },
+      on: {
+        GUARD_RESULT: [
+          { guard: "guardPassed", target: "nextRoom" },
+          { guard: "guardFailed", target: "guardRejected" },
+        ],
+      },
+    },
+
+    death: {
+      entry: { type: "speakDeath" },
+      type: "final",
+    },
+
+    victory: {
+      entry: { type: "speakVictory" },
+      type: "final",
+    },
+  },
+});
+
+let service = createActor(gameMachine);
+
+
+export async function startGame(onEnd?: () => void) {
+  const rooms: Room[] = await loadRooms(xmlText);
+  onGameEnd = onEnd ?? null;
+
+  // Stop any previous actor (in case the user restarts mid-game)
+  try { service.stop(); } catch { /* already stopped */ }
+
+  // Create a brand-new actor — a stopped/final actor cannot be restarted
+  service = createActor(gameMachine);
+  service.start();
+  service.send({ type: "INIT", rooms });
+}
+
+export { startGame as startGameXState };

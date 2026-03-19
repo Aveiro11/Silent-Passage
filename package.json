@@ -1,0 +1,24 @@
+{
+  "name": "voice-mood-game",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/xml2js": "^0.4.14",
+    "typescript": "~5.9.3",
+    "vite": "^8.0.0"
+  },
+  "dependencies": {
+    "@statelyai/inspect": "^0.4.0",
+    "axios": "^1.13.6",
+    "fast-xml-parser": "^5.5.5",
+    "microsoft-cognitiveservices-speech-sdk": "^1.48.0",
+    "xml2js": "^0.6.2",
+    "xstate": "^5.28.0"
+  }
+}
