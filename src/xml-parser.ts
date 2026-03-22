@@ -11,6 +11,6 @@ export async function loadRooms(xml: string): Promise<Room[]> {
     type: (r.getAttribute("type") || "quiet") as "quiet" | "loud",
     minVolume: Number(r.getAttribute("minVolume") || 0),
     maxVolume: Number(r.getAttribute("maxVolume") || 100),
-    text: r.textContent || ""
+    text: r.getAttribute("text") || r.textContent || ""
   }));
 }

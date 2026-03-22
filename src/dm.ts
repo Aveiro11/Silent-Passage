@@ -50,20 +50,20 @@ const gameMachine = setup({
   },
 
   actions: {
-    // Speak the current room prompt, THEN open the mic once TTS is done.
+    // Once TTS is done.
     speakRoom: ({ context }) => {
       const room = context.rooms[context.currentRoom];
       if (!room) return;
-      speak(room.text.trim(), () => {
-        // Adaptive delay: estimate TTS duration from text length + 1500ms buffer
-        // Prevents mic from opening while speaker output is still decaying
-        const wordCount = room.text.trim().split(/\s+/).length;
-        const estimatedMs = Math.ceil((wordCount / 150) * 60_000) + 1500;
-        startListening(Math.max(2500, estimatedMs));
-      });
+      setTimeout(() => {
+        speak(room.text.replace(/\s+/g, " ").trim(), () => {
+          const wordCount = room.text.trim().split(/\s+/).length;
+          const estimatedMs = Math.ceil((wordCount / 150) * 60_000) + 1500;
+          startListening(Math.max(2500, estimatedMs));
+        });
+      }, 1500);
     },
 
-    // Speak retry message, THEN open the mic again.
+    // Retry
     speakRetry: () => {
       speak("I didn't hear you. Please speak.", () => startListening(2000));
     },
@@ -92,7 +92,6 @@ const gameMachine = setup({
       });
     },
 
-    // Fire NLU; result comes back as GUARD_RESULT event.
     checkGuardIntent: ({ context, event }) => {
       const room = context.rooms[context.currentRoom];
       const text = event.type === "SPEECH_RESULT" ? event.text.trim() : "";
@@ -137,7 +136,14 @@ const gameMachine = setup({
       const room = context.rooms[context.currentRoom];
       if (room?.type !== "temple") return false;
       if (event.type !== "SPEECH_RESULT") return false;
-      return event.confidence >= 0.6 && getVolumeLevel() <= (room.maxVolume ?? 30);
+      const confidence = event.confidence ?? 0;
+      // If confidence is unavailable
+      if (confidence === 0) {
+        const text = event.text.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, "");
+        return ["adib", "adip", "adeep", "aadeeb"].some(p => text.includes(p)) &&
+          getVolumeLevel() <= (room.maxVolume ?? 30);
+      }
+      return confidence >= 0.6 && getVolumeLevel() <= (room.maxVolume ?? 30);
     },
 
     isTempleFail: ({ context }) => {
@@ -173,7 +179,7 @@ const gameMachine = setup({
     loading: {
       on: {
         INIT: {
-          target: "room",
+          target: "room" as const,
           actions: assign({ rooms: ({ event }) => event.rooms }),
         },
       },
@@ -182,98 +188,103 @@ const gameMachine = setup({
     room: {
       entry: { type: "speakRoom" },
       on: {
-        NO_INPUT: { target: "retrying" },
+        NO_INPUT: { target: "retrying" as const },
         SPEECH_RESULT: [
-          { guard: "isDragonAndLoud", target: "death" },
-          { guard: "isDragonAndQuiet", target: "dragonPass" },
-          { guard: "isGuardRoom", target: "awaitGuardIntent" },
-          { guard: "isTempleSuccess", target: "victory" },
-          { guard: "isTempleFail", target: "templeFailed" },
-          { guard: "isDefaultPass", target: "nextRoom" },
-          { target: "retrying" },
-        ],
+          { guard: "isDragonAndLoud", target: "death" as const },
+          { guard: "isDragonAndQuiet", target: "dragonPass" as const },
+          { guard: "isGuardRoom", target: "awaitGuardIntent" as const },
+          { guard: "isTempleSuccess", target: "victory" as const },
+          { guard: "isTempleFail", target: "templeFailed" as const },
+          { guard: "isDefaultPass", target: "nextRoom" as const },
+          { target: "retrying" as const },
+        ] as const,
       },
     },
 
-
     retrying: {
       entry: { type: "speakRetry" },
-
       on: {
-        NO_INPUT: { target: "retrying" },
+        NO_INPUT: { target: "retrying" as const },
         SPEECH_RESULT: [
-          { guard: "isDragonAndLoud", target: "death" },
-          { guard: "isDragonAndQuiet", target: "dragonPass" },
-          { guard: "isGuardRoom", target: "awaitGuardIntent" },
-          { guard: "isTempleSuccess", target: "victory" },
-          { guard: "isTempleFail", target: "templeFailed" },
-          { guard: "isDefaultPass", target: "nextRoom" },
-          { target: "retrying" },
-        ],
+          { guard: "isDragonAndLoud", target: "death" as const },
+          { guard: "isDragonAndQuiet", target: "dragonPass" as const },
+          { guard: "isGuardRoom", target: "awaitGuardIntent" as const },
+          { guard: "isTempleSuccess", target: "victory" as const },
+          { guard: "isTempleFail", target: "templeFailed" as const },
+          { guard: "isDefaultPass", target: "nextRoom" as const },
+          { target: "retrying" as const },
+        ] as const,
       },
     },
 
     nextRoom: {
-      entry: assign({ currentRoom: ({ context }) => context.currentRoom + 1 }),
-      always: [
-        { guard: "isRoomsExhausted", target: "victory" },
-        { target: "room" },
-      ],
+      entry: [
+        assign({ currentRoom: ({ context }) => context.currentRoom + 1 }),
+        () => speak("Moving on.", () => service.send({ type: "FEEDBACK_DONE" })),
+      ] as const,
+      on: {
+        FEEDBACK_DONE: [
+          { guard: "isRoomsExhausted", target: "victory" as const },
+          { target: "room" as const },
+        ] as const,
+      },
     },
 
     templeFailed: {
       entry: [
         assign({ currentRoom: () => 0 }),
-        { type: "speakTempleFail" },
-      ],
-      on: { FEEDBACK_DONE: "room" },
+        { type: "speakTempleFail" as const },
+      ] as const,
+      on: { FEEDBACK_DONE: "room" as const },
     },
-
 
     guardRejected: {
       entry: [
         assign({ currentRoom: () => 0 }),
-        { type: "speakGuardRejected" },
-      ],
-      on: { FEEDBACK_DONE: "room" },
+        { type: "speakGuardRejected" as const },
+      ] as const,
+      on: { FEEDBACK_DONE: "room" as const },
     },
 
     dragonPass: {
       entry: [
         assign({ currentRoom: ({ context }) => context.currentRoom + 1 }),
-        ({ context }) => {
+        ({ context }: { context: GameContext }) => {
           const room = context.rooms[context.currentRoom - 1];
           const msg = room?.id === "dragon_halfawake"
             ? "You hold your breath and tiptoe past the restless dragon."
             : "You sneak past the dragon quietly.";
-          speak(msg, () => service.send({ type: "FEEDBACK_DONE" }));
+          speak(msg, () => {
+            setTimeout(() => service.send({ type: "FEEDBACK_DONE" }), 2000);
+          });
         },
-      ],
+      ] as const,
       on: {
         FEEDBACK_DONE: [
-          { guard: "isRoomsExhausted", target: "victory" },
-          { target: "room" },
-        ],
+          { guard: "isRoomsExhausted", target: "victory" as const },
+          { target: "room" as const },
+        ] as const,
       },
     },
+
     awaitGuardIntent: {
       entry: { type: "checkGuardIntent" },
       on: {
         GUARD_RESULT: [
-          { guard: "guardPassed", target: "nextRoom" },
-          { guard: "guardFailed", target: "guardRejected" },
-        ],
+          { guard: "guardPassed", target: "nextRoom" as const },
+          { guard: "guardFailed", target: "guardRejected" as const },
+        ] as const,
       },
     },
 
     death: {
       entry: { type: "speakDeath" },
-      type: "final",
+      type: "final" as const,
     },
 
     victory: {
       entry: { type: "speakVictory" },
-      type: "final",
+      type: "final" as const,
     },
   },
 });

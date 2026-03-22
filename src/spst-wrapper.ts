@@ -2,20 +2,23 @@ import * as SpeechSDK from "microsoft-cognitiveservices-speech-sdk";
 import { SPEECH_KEY, SPEECH_REGION } from "./azure";
 import { getVolumeLevel } from "./audio";
 
-const speechConfigForTTS = SpeechSDK.SpeechConfig.fromSubscription(SPEECH_KEY, SPEECH_REGION);
-speechConfigForTTS.speechSynthesisVoiceName = "en-US-DavisNeural";
-const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfigForTTS);
-
-
-// speak unchanged (uses singleton synthesizer)
 export function speak(text: string, onDone?: () => void) {
+  const speechConfigForTTS = SpeechSDK.SpeechConfig.fromSubscription(SPEECH_KEY, SPEECH_REGION);
+  speechConfigForTTS.speechSynthesisVoiceName = "en-US-DavisNeural";
+  const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfigForTTS);
+
+  console.log("Speaking:", text);
   synthesizer.speakTextAsync(
     text,
     result => {
       console.log("TTS done", result);
+      synthesizer.close();
       if (onDone) onDone();
     },
-    error => console.error("TTS error", error)
+    error => {
+      console.error("TTS error", error);
+      synthesizer.close();
+    }
   );
 }
 
@@ -25,7 +28,7 @@ export function listen(
   timeoutMs = 5000
 ) {
   const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(SPEECH_KEY, SPEECH_REGION);
-  // Make recognizer wait for real speech
+  // Recognizer wait for real speech
   speechConfig.setProperty(
     SpeechSDK.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs,
     "5000"
@@ -36,9 +39,10 @@ export function listen(
     "1500"
   );
 
-  // Apply your CUSTOM SPEECH model here
-  speechConfig.endpointId = "a60f971d-c685-4c9e-abc4-03d6f78d380b";
+  // CUSTOM SPEECH model details
+  speechConfig.endpointId = "2f2ea2b9-b6a2-4f51-8251-e96221e08749";
   speechConfig.speechRecognitionLanguage = "en-US";
+  speechConfig.outputFormat = SpeechSDK.OutputFormat.Detailed;
 
   const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
   const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
@@ -68,9 +72,11 @@ export function listen(
         .replace(/[^\w\s]/g, "")
         .trim();
 
-      const json = JSON.parse(result.properties?.getProperty(
+      const rawJson = result.properties?.getProperty(
         SpeechSDK.PropertyId.SpeechServiceResponse_JsonResult
-      ) ?? "{}");
+      );
+      console.log("Raw JSON response:", rawJson);
+      const json = JSON.parse(rawJson ?? "{}");
       console.log("Recognized:", text);
       console.log("Recognition details:", {
         reason: result.reason,
@@ -81,8 +87,9 @@ export function listen(
         NBest: json?.NBest,
       });
       console.log("Volume level:", getVolumeLevel());
+      console.log("Password confidence:", json?.NBest?.[0]?.Confidence ?? "N/A");
 
-      //  Ignore noise / empty input
+      //  noise / empty input
       if (!text || text.length < 2) {
         console.log("Ignored empty/noise input");
         if (onNoInput) onNoInput();

@@ -2,7 +2,7 @@ import { LANG_ENDPOINT, LANG_KEY, LANG_PROJECT, LANG_DEPLOYMENT } from "./azure"
 
 export async function detectIntent(text: string): Promise<string | null> {
   const url = `${LANG_ENDPOINT}/language/:analyze-conversations?api-version=2023-04-01`;
-  console.log("NLU URL:", url);
+
   const body = {
     kind: "Conversation",
     analysisInput: {
@@ -19,9 +19,6 @@ export async function detectIntent(text: string): Promise<string | null> {
     }
   };
 
-  console.log("NLU URL:", url);
-  console.log("NLU BODY:", JSON.stringify(body, null, 2));
-
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -37,10 +34,7 @@ export async function detectIntent(text: string): Promise<string | null> {
   }
 
   const data = await res.json();
-  console.log("NLU raw response:", data);
 
-  // Attempt to find the top intent in common response shapes
-  // Try known locations - log shows you the shape and you can adapt if necessary.
   const tryPaths = [
     () => data?.result?.prediction?.topIntent,
     () => data?.results?.[0]?.result?.prediction?.topIntent,
@@ -54,12 +48,10 @@ export async function detectIntent(text: string): Promise<string | null> {
     if (v) return String(v);
   }
 
-  // If nothing found, attempt deeper introspection (safe fallback)
   try {
     const alt = data?.analysisResults?.[0]?.conversationResult?.prediction?.topIntent;
     if (alt) return String(alt);
   } catch (e) { /* ignore */ }
 
-  // last fallback: return null
   return null;
 }
