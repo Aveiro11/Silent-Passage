@@ -13,7 +13,7 @@ export function speak(text: string, onDone?: () => void) {
     text,
     result => {
       console.log("TTS done", result);
-      if (onDone) onDone();   // ✅ trigger next step
+      if (onDone) onDone();
     },
     error => console.error("TTS error", error)
   );
@@ -37,13 +37,11 @@ export function listen(
   );
 
   // Apply your CUSTOM SPEECH model here
-  speechConfig.endpointId = "ae03e309-27a8-4ccf-9511-9ead39b54b05";
+  speechConfig.endpointId = "a60f971d-c685-4c9e-abc4-03d6f78d380b";
   speechConfig.speechRecognitionLanguage = "en-US";
 
   const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
   const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
-
-  // Apply phrase list HERE (correct place)
   const phraseList = SpeechSDK.PhraseListGrammar.fromRecognizer(recognizer);
   phraseList.addPhrase("Adib");
   phraseList.addPhrase("Adip");
