@@ -1,6 +1,6 @@
 # 🤫 Silent Passage Game
 
-A voice-driven stealth dungeon game built with TypeScript, XState v5, and Azure Cognitive Services. Navigate three rooms using only your voice — but be careful how loud you speak. The dragon is sleeping.
+A voice-driven stealth dungeon game built with TypeScript, XState v5, SpeechState, and Azure Cognitive Services. Navigate three rooms using only your voice — but be careful how loud you speak. The dragon is sleeping.
 
 ---
 
@@ -14,7 +14,7 @@ You are a traveller trying to pass through three rooms, each with its own challe
 | 💂 Guard's Gate | A guard blocks the gate | Politely ask or greet the guard, quietly |
 | 🏛️ Sacred Temple | A temple door demands a password | Whisper the secret password *"Adib"* |
 
-If you speak too loudly near the dragon, it wakes up and kills you. If you threaten the guard or speak rudely, he sends you back to the dragon. If you shout the temple password, you are reset to the start.
+If you speak too loudly near the dragon, it wakes up and kills you. If you threaten the guard, he draws his sword and kills you. If you shout the temple password, you are reset to the start. Fail the temple twice and the door seals forever.
 
 ---
 
@@ -35,6 +35,8 @@ Every time you start a new game, each room is randomly selected from two possibl
 |---------|-----------|-----------------|
 | **Normal** | The guard is on duty | Polite request, command, or greeting |
 | **Grumpy** | The guard is furious today | Greeting only |
+
+Threatening the guard (`GameThreat`) in either variant results in instant death.
 
 ### 🏛️ Sacred Temple
 
@@ -61,6 +63,21 @@ A live volume meter is shown on screen so you can gauge how loudly you are speak
 
 ---
 
+## Temple Room — Attempt System
+
+The temple room tracks failed attempts. The door will seal forever if you fail too many times.
+
+| Situation | Result |
+|-----------|--------|
+| Correct password + quiet | Victory |
+| Too loud | Reset to room 1 |
+| Wrong password | "Wrong password. Try again." — attempt counted |
+| Too loud AND wrong | "Too loud and wrong at the same time." — attempt counted |
+| No input twice | "I didn't hear you." — death after 2 silences |
+| 2 failed attempts | Temple door seals forever — death |
+
+---
+
 ## Password Detection
 
 The temple room uses a trained **Azure Custom Speech model** to recognise the password *"Adib"*. Rather than hardcoding phonetic variants, the game trusts the model's **confidence score** — if the model is at least 60% confident it heard the password (regardless of accent or pronunciation variation), the door opens.
@@ -69,7 +86,7 @@ This means:
 - Heavy accents are handled gracefully
 - You do not need to say it perfectly
 - Shouting it still fails (volume check applies independently)
-- The stricter temple variant adds an extra challenge by requiring an even softer whisper
+- The stricter temple variant requires an even softer whisper
 
 ---
 
@@ -79,21 +96,16 @@ The guard room uses **Azure Conversational Language Understanding (CLU)** to cla
 
 ### Normal Guard
 
-| Intent | Example Utterances |
-|--------|--------------------|
-| `GamePolite` | "Could you please move?", "Excuse me" |
-| `GameCommand` | "Move aside", "Let me through" |
-| `GameGreeting` | "Hello there", "Good day" |
+| Intent | Example Utterances | Result |
+|--------|--------------------|--------|
+| `GamePolite` | "Could you please move?", "Excuse me" | Pass |
+| `GameCommand` | "Move aside", "Let me through" | Pass |
+| `GameGreeting` | "Hello there", "Good day" | Pass |
+| `GameThreat` | "Move or I'll kill you" | Instant death |
 
 ### Grumpy Guard
 
-Only a greeting will work. Commands and polite requests will offend him.
-
-| Intent | Example Utterances |
-|--------|--------------------|
-| `GameGreeting` | "Hello there", "Good day", "Hey" |
-
-Any other intent (including threats) sends you back to room 1 in both variants.
+Only a greeting will work. Commands and polite requests will offend him and send you back to room 1. Threats result in instant death.
 
 ---
 
@@ -104,10 +116,12 @@ Any other intent (including threats) sends you back to room 1 in both variants.
 | Language | ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white) `strict mode, ES2022` |
 | Bundler | ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat&logo=vite&logoColor=white) |
 | State Machine | ![XState](https://img.shields.io/badge/XState_v5-121212?style=flat&logo=xstate&logoColor=white) |
+| Speech I/O | ![SpeechState](https://img.shields.io/badge/SpeechState-v2.15-6B46C1?style=flat&logoColor=white) `SPEAK_COMPLETE / RECOGNISED / ASR_NOINPUT` |
 | Speech Synthesis | ![Azure](https://img.shields.io/badge/Azure_TTS-0078D4?style=flat&logo=microsoftazure&logoColor=white) `en-US-DavisNeural` |
 | Speech Recognition | ![Azure](https://img.shields.io/badge/Azure_Custom_Speech-0078D4?style=flat&logo=microsoftazure&logoColor=white) `Custom Speech Model — Sweden Central` |
 | Intent Detection | ![Azure](https://img.shields.io/badge/Azure_CLU-0078D4?style=flat&logo=microsoftazure&logoColor=white) `Conversational Language Understanding` |
 | Volume Detection | ![WebAudio](https://img.shields.io/badge/Web_Audio_API-FF6B35?style=flat&logo=webaudio&logoColor=white) `AnalyserNode — real time amplitude` |
+| Inspector | ![Stately](https://img.shields.io/badge/Stately_Inspector-121212?style=flat&logoColor=white) `createBrowserInspector` |
 
 ---
 
@@ -115,7 +129,6 @@ Any other intent (including threats) sends you back to room 1 in both variants.
 ```
 src/
   dm.ts            # Dialogue manager — XState v5 machine, all game logic
-  spst-wrapper.ts  # Azure Speech SDK wrapper (speak / listen)
   nlu.ts           # Azure CLU intent detection
   audio.ts         # Microphone volume monitoring (Web Audio API)
   xml-parser.ts    # Loads room definitions from game.xml
@@ -126,6 +139,8 @@ src/
   azure.ts         # API keys (not committed)
 ```
 
+Note: `spst-wrapper.ts` was removed after migrating to SpeechState, which handles the full TTS/ASR lifecycle internally.
+
 ---
 
 ## Dialogue State Machine
@@ -133,25 +148,28 @@ src/
 The XState v5 machine drives the entire game flow:
 ```
 loading → room → retrying
-               → dragonPass   → room
-               → death        (final)
-               → awaitGuardIntent → nextRoom
-                                  → guardRejected → room
-               → templeFailed → room
-               → victory      (final)
-               → nextRoom     → room / victory
+               → dragonPass      → room
+               → dying           → death (final)
+               → awaitGuardIntent → nextRoom       → room / winning
+                                  → guardRejected  → room
+                                  → guardKill      → death (final)
+               → templeFailed    → room
+               → templeRetrying  → evaluating
+               → templeNoInput   → dying / evaluating
+               → templeWrongAndLoud → templeNoInput / dying
+               → winning         → victory (final)
 ```
 
 Key design decisions:
 
-- **`FEEDBACK_DONE` event pattern** — spoken feedback (e.g. "The guard is offended") sends a `FEEDBACK_DONE` event from its TTS callback before transitioning to the next state. This ensures the machine never transitions mid-speech.
-- **`NO_INPUT` event** — silence and noise are routed as a dedicated `NO_INPUT` event rather than an empty `SPEECH_RESULT`, preventing empty strings from reaching guards that don't expect them.
-- **Adaptive mic delay** — the microphone opens after a delay calculated from the text length of the room prompt (`wordCount / 150 * 60000 + 1500ms`), preventing TTS audio from bleeding into the recogniser.
-- **Fresh actor on restart** — after a `final` state (death or victory), a brand new XState actor is created on `startGame()` since a stopped actor cannot be restarted.
-- **`isDefaultPass` guard exclusion** — the dragon, guard, and temple rooms are explicitly excluded from the default volume-range pass so they can only be cleared by their own dedicated guards.
-- **Random room selection** — `pickRooms()` filters all rooms by type at game start and randomly picks one variant per room type, keeping each run unpredictable.
-- **Variant-aware feedback** — the dragon pass message differs depending on which variant was active (`dragon_halfawake` gets a different line than the normal sleeping dragon).
-- **Grumpy guard intent restriction** — `checkGuardIntent` checks the room `id` at runtime and narrows the allowed intents to `GameGreeting` only when the grumpy variant is active.
+- **SpeechState integration** — `SPEAK_COMPLETE` fires only when TTS truly ends, eliminating the need for manual TTS callbacks, `FEEDBACK_DONE` events, and adaptive delays that were required in the earlier `spst-wrapper.ts` approach.
+- **800ms delay after RECOGNISED** — actions that fire immediately after recognition (dragonPass, guardKill, etc.) use a `setTimeout` of 800ms before calling `spk()` to give SpeechState time to close the ASR session before accepting a new SPEAK command.
+- **`evaluating` transient state** — after `RECOGNISED`, speech result is saved to context via `saveRecognised`, then `evaluating` uses `always:` transitions to check all guards synchronously against the stored values.
+- **Volume captured at recognition time** — `getVolumeLevel()` is called once in `saveRecognised` and stored in context, so all guards read the same snapshot rather than measuring at different moments.
+- **Temple attempt tracking** — `templeAttempts` and `templeNoInputCount` in context track failures across states, allowing death after repeated wrong attempts or silence.
+- **Fresh actor on restart** — after a `final` state, a brand new XState actor is created on `startGame()` since a stopped actor cannot be restarted.
+- **Random room selection** — `pickRooms()` filters all rooms by type at game start and randomly picks one variant per room type.
+- **Grumpy guard and GameThreat** — `checkGuardIntent` checks room id at runtime to restrict intents, and sends `GUARD_THREAT` event when threat intent is detected, routing to `guardKill`.
 
 ---
 
@@ -171,9 +189,10 @@ export const SPEECH_REGION = "swedencentral";
 
 export const LANG_KEY = "your-azure-language-key";
 export const LANG_ENDPOINT = "https://your-resource.cognitiveservices.azure.com";
-
 export const LANG_PROJECT = "your-project-name";
 export const LANG_DEPLOYMENT = "your-deployment-name";
+
+export const CUSTOM_SPEECH_ENDPOINT_ID = "your-custom-speech-endpoint-id";
 ```
 
 ### 3. Run the dev server
@@ -194,30 +213,34 @@ Your Azure Language project must recognise the following intents for the guard r
 | `GamePolite` | "Please move", "Could you step aside", "Excuse me sir" |
 | `GameCommand` | "Move", "Step aside", "Let me pass" |
 | `GameGreeting` | "Hello", "Good day", "Hey there" |
+| `GameThreat` | "Move or I'll kill you", "Step aside or face me" |
 
 ---
 
 ## Azure Custom Speech Model
 
-The temple room uses a custom speech model trained to recognise the password *"Adib"* across accents and pronunciation variants. The model endpoint ID is set in `spst-wrapper.ts`:
+The temple room uses a custom speech model trained to recognise the password *"Adib"* across accents and pronunciation variants. The endpoint is configured in SpeechState settings:
 ```typescript
-speechConfig.endpointId = "your-custom-model-endpoint-id";
-speechConfig.speechRecognitionLanguage = "en-US";
+const settings: Settings = {
+  speechRecognitionEndpointId: "your-custom-speech-endpoint-id",
+  locale: "en-US",
+  ...
+};
 ```
 
-A confidence threshold of `0.6` is applied — if the model is at least 60% confident it heard the password, and the volume is within range, the temple door opens. The strict temple variant tightens the volume requirement further (≤ 20 instead of ≤ 30).
+A confidence threshold of `0.6` is applied — if the model is at least 60% confident it heard the password, and the volume is within range, the temple door opens.
 
 ---
 
 ## Known Limitations
 
-- The volume meter reads instantaneous amplitude at the moment recognition completes, not the average over the whole utterance. A loud start followed by a quiet finish may still pass.
-- TTS bleed (the microphone picking up speaker output) is mitigated by an adaptive delay but may still occur on very loud speaker setups. Using headphones is recommended.
-- The game must be reloaded if the Azure Speech session expires mid-game.
+- Volume is captured at the moment recognition completes, not averaged over the whole utterance. A loud start followed by a quiet finish may still pass.
+- The 800ms ASR close delay is fixed — on slower connections SpeechState may need longer to close the session, causing the SPEAK command to be ignored.
+- The Stately inspector opens a new tab automatically on every `startGame()` call — disable by removing `inspect: inspector.inspect` from `createActor` in production.
 - Random room selection is done once per `startGame()` call — you cannot see which variant you got until you enter the room.
 
 ---
 
 ## Credits
 
-Built as part of a dialogue systems course project using Azure Cognitive Services and XState v5.
+Built as part of a dialogue systems course project using Azure Cognitive Services, SpeechState, and XState v5.
