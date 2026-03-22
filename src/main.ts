@@ -1,9 +1,9 @@
-// src/main.ts
 import "./style.css";
 import { setupAudio, getVolumeLevel } from "./audio";
 import { startGame } from "./dm";
 
 const startBtn = document.getElementById("startBtn") as HTMLButtonElement;
+
 const meter = document.getElementById("volumeMeter") as HTMLProgressElement;
 
 let volumeInterval: number | undefined;
