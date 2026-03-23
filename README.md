@@ -1,4 +1,4 @@
-# 🤫 Silent Passage Game
+# 🤫 Silent Passage (A browser-console based voice game)
 
 A voice-driven stealth dungeon game built with TypeScript, XState v5, SpeechState, and Azure Cognitive Services. Navigate three rooms using only your voice — but be careful how loud you speak. The dragon is sleeping.
 
