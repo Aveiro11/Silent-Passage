@@ -116,12 +116,12 @@ Only a greeting will work. Commands and polite requests will offend him and send
 | Language | ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white) `strict mode, ES2022` |
 | Bundler | ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat&logo=vite&logoColor=white) |
 | State Machine | ![XState](https://img.shields.io/badge/XState_v5-121212?style=flat&logo=xstate&logoColor=white) |
-| Speech I/O | ![SpeechState](https://img.shields.io/badge/SpeechState-v2.15-6B46C1?style=flat&logoColor=white) `SPEAK_COMPLETE / RECOGNISED / ASR_NOINPUT` |
+| Speech I/O | ![SpeechState](https://img.shields.io/badge/SpeechState-v2.15-6B46C1?style=flat&logoColor=white)|
 | Speech Synthesis | ![Azure](https://img.shields.io/badge/Azure_TTS-0078D4?style=flat&logo=microsoftazure&logoColor=white) `en-US-DavisNeural` |
 | Speech Recognition | ![Azure](https://img.shields.io/badge/Azure_Custom_Speech-0078D4?style=flat&logo=microsoftazure&logoColor=white) `Custom Speech Model — Sweden Central` |
-| Intent Detection | ![Azure](https://img.shields.io/badge/Azure_CLU-0078D4?style=flat&logo=microsoftazure&logoColor=white) `Conversational Language Understanding` |
-| Volume Detection | ![WebAudio](https://img.shields.io/badge/Web_Audio_API-FF6B35?style=flat&logo=webaudio&logoColor=white) `AnalyserNode — real time amplitude` |
-| Inspector | ![Stately](https://img.shields.io/badge/Stately_Inspector-121212?style=flat&logoColor=white) `createBrowserInspector` |
+| Intent Detection | ![Azure](https://img.shields.io/badge/Azure_CLU-0078D4?style=flat&logo=microsoftazure&logoColor=white)|
+| Volume Detection | ![WebAudio](https://img.shields.io/badge/Web_Audio_API-FF6B35?style=flat&logo=webaudio&logoColor=white)|
+| Inspector | ![Stately](https://img.shields.io/badge/Stately_Inspector-121212?style=flat&logoColor=white)|
 
 ---
 
