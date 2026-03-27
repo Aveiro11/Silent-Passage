@@ -60,6 +60,5 @@ recordings/
 *.wav
 *.mp3
 *.webm
-src/azure.ts
 # Environment variables
 .env
